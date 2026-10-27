@@ -9,7 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  # Task 5: quality gate (runs on every PR and every push to main)
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -27,7 +26,6 @@ jobs:
       - name: Run pytest
         run: python -m pytest -v
 
-  # Task 6: only on pushes to main, and only if the tests passed
   publish:
     name: Build and push image to GHCR
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
