@@ -1,13 +1,22 @@
 services:
   web:
-    image: ghcr.io/seif-el-din-mahmoud/flask-app:0715b82
+    image: ${IMAGE_REPO:?set IMAGE_REPO}:${IMAGE_TAG:?set IMAGE_TAG}
     container_name: flask-app
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
+    environment:
+      BREAK_HEALTH: ${BREAK_HEALTH:-0}
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
-      interval: 30s
+      interval: 10s
       timeout: 3s
       retries: 3
       start_period: 5s

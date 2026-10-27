@@ -1,0 +1,91 @@
+- name: Deploy SHA-tagged image with Docker Compose
+  hosts: all
+  gather_facts: false
+  vars:
+    deploy_dir: /opt/app
+    registry_user: "{{ lookup('env', 'GHCR_USERNAME') }}"
+    registry_token: "{{ lookup('env', 'GHCR_TOKEN') }}"
+    image_repo: "{{ lookup('env', 'IMAGE_REPO') }}"
+    image_tag: "{{ lookup('env', 'IMAGE_TAG') }}"
+    break_health: "{{ lookup('env', 'BREAK_HEALTH') | default('0', true) }}"
+
+  tasks:
+    - name: Check required values are set
+      ansible.builtin.assert:
+        that:
+          - registry_user | length > 0
+          - registry_token | length > 0
+          - image_repo | length > 0
+          - image_tag | length > 0
+        quiet: true
+      no_log: true
+
+    - name: Log in to GHCR on the server
+      ansible.builtin.command:
+        cmd: "docker login ghcr.io -u {{ registry_user }} --password-stdin"
+        stdin: "{{ registry_token }}"
+      no_log: true
+      changed_when: false
+
+    - name: Copy compose file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../docker-compose.yml"
+        dest: "{{ deploy_dir }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Write .env with the image tag to deploy
+      ansible.builtin.copy:
+        dest: "{{ deploy_dir }}/.env"
+        mode: "0600"
+        content: |
+          IMAGE_REPO={{ image_repo }}
+          IMAGE_TAG={{ image_tag }}
+          BREAK_HEALTH={{ break_health }}
+
+    - name: Roll out and verify
+      block:
+        - name: Pull the image and recreate the service
+          community.docker.docker_compose_v2:
+            project_src: "{{ deploy_dir }}"
+            pull: always
+            recreate: always
+            remove_orphans: true
+            state: present
+
+        - name: Smoke test /health (runs on the server)
+          ansible.builtin.uri:
+            url: http://127.0.0.1:5000/health
+            status_code: 200
+          register: health
+          retries: 10
+          delay: 3
+          until: health.status == 200
+
+        - name: Show result
+          ansible.builtin.debug:
+            msg: "Deployed {{ image_tag }}, /health returned {{ health.status }}: {{ health.json }}"
+
+      rescue:
+        - name: Collect container status
+          ansible.builtin.command:
+            cmd: docker compose ps -a
+            chdir: "{{ deploy_dir }}"
+          register: ps_out
+          changed_when: false
+          failed_when: false
+
+        - name: Collect container logs
+          ansible.builtin.command:
+            cmd: docker compose logs --no-color --tail 100 web
+            chdir: "{{ deploy_dir }}"
+          register: logs_out
+          changed_when: false
+          failed_when: false
+
+        - name: Show diagnosis
+          ansible.builtin.debug:
+            msg: "{{ ['--- docker compose ps ---'] + ps_out.stdout_lines + ['--- container logs ---'] + logs_out.stdout_lines }}"
+
+        - name: Fail the deployment
+          ansible.builtin.fail:
+            msg: "Deployment of {{ image_tag }} failed the health check"

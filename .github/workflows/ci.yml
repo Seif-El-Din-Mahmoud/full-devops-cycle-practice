@@ -34,13 +34,17 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      tag: ${{ steps.vars.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Set image name and tag
+        id: vars
         run: |
           echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/flask-app" >> "$GITHUB_ENV"
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         env:
@@ -58,3 +62,13 @@ jobs:
         run: |
           docker push "$IMAGE:$SHORT_SHA"
           docker push "$IMAGE:latest"
+
+  deploy:
+    name: Deploy to EC2
+    needs: publish
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      image_tag: ${{ needs.publish.outputs.tag }}
+    secrets: inherit
