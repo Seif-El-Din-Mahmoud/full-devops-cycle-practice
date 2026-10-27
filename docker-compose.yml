@@ -1,6 +1,6 @@
 services:
   web:
-    build: .
+    image: ghcr.io/seif-el-din-mahmoud/flask-app:0715b82
     container_name: flask-app
     ports:
       - "5000:5000"
